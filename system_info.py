@@ -7,6 +7,7 @@ import psutil
 import socket
 import netifaces
 import ctypes
+import pynvml
 
 
 class MyCPU(object):
@@ -276,49 +277,109 @@ class MySystem(object):
         command = "sudo dmidecode -q --type baseboard|grep 'Serial Number'"
         self.baseboard_sn = os.popen('echo %s|sudo -S %s'%(sudoPassword, command)).readline().split()[2]
 
+class MyGPU(object):
+    def __init__(self):
+        super(MyGPU, self).__init__()
+        pynvml.nvmlInit()
+        self.cuda_version = None
+        self.cudnn_version = None
+        self.driver_version = None
+        self.all_gpu_model = {}
+
+    def get_all_gpu_model(self):
+        '''
+        获得所有GPU的型号
+        :return:
+        '''
+        command = 'lspci|grep -i vga'
+        result = os.popen(command).readlines()
+        idx = 0
+        for item in result:
+            self.all_gpu_model['GPU'+str(idx)] = item.split(':')[-1].strip()
+            idx += 1
+
+    def get_gpu_driver_version(self):
+        '''
+        获得显卡驱动的版本
+        :return:
+        '''
+        driver = 'cat /proc/driver/nvidia/version|grep "NVRM"'
+        self.driver_version = os.popen(driver).read().split()[7]
+
+    def get_cuda_cudnn_info(self):
+        '''
+        获得cuda和cudnn的版本
+        :return:
+        '''
+        cuda = 'cat /usr/local/cuda/version.txt'
+        cudnn = 'cat /usr/local/cuda/include/cudnn.h | grep "#define CUDNN_MAJOR" -A 2'
+        self.cuda_version = os.popen(cuda).readline().split()[2]
+        result = os.popen(cudnn).readlines()
+        version_list = []
+        for item in result:
+            version_list.append(item.split()[2])
+        self.cudnn_version = 'v' + '.'.join(version_list)
+
+    def get_nvidia_gpu_driver_version(self):
+        '''
+        获得显卡驱动的版本
+        :return:
+        '''
+        return pynvml.nvmlSystemGetDriverVersion().decode('utf-8')
+
+    def get_nvidia_gpu_info(self):
+        '''
+        获得英伟达GPU的信息
+        :return:
+        '''
+        info_dict = {}
+        device_count = pynvml.nvmlDeviceGetCount()
+        info_dict['device_count'] = device_count
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info_dict['handle'+str(i)] = handle
+            info_dict['GPU'+str(i)] = pynvml.nvmlDeviceGetName(handle).decode('utf-8')
+        return info_dict
+
+    def get_nvidia_gpu_mem_info(self, handle):
+        '''
+        获得英伟达GPU的显存信息
+        :param handle:
+        :return:
+        '''
+        mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        return {'gpu_mem_total': mem_info.total,
+                'gpu_mem_used': mem_info.used,
+                'gpu_mem_free': mem_info.free,
+                'usage_rate': mem_info.used / mem_info.total * 100}
+
+    def get_nvidia_gpu_temper(self, handle, sensor=0):
+        '''
+        获得英伟达GPU的温度
+        :param handle:
+        :param sensor:
+        :return:
+        '''
+        temper = pynvml.nvmlDeviceGetTemperature(handle, sensor)
+        return temper
+
+    def close_pynvml(self):
+        '''
+        关闭pynvml工具
+        :return:
+        '''
+        pynvml.nvmlShutdown()
+
+    def get_all_info(self):
+        command = 'gpustat -cpu'
+        result = os.popen(command).readlines()
+        for item in result:
+            print(item)
+
 
 if __name__ == '__main__':
     mycpu = MyCPU()
     mymem = MyMem()
     mydisk = MyDisk()
     mysys = MySystem()
-    # mycpu.get_cpu_basic_info()
-    # print(mycpu.cpu_basic_info)
-    # print(mycpu.logical_cpu_count)
-    # print(mycpu.physical_cpu_count)
-    # mycpu.get_cpu_id_by_c()
-    # mycpu.get_cpu_id_by_python()
-    # print(mycpu.cpu_id_c)
-    # print(mycpu.cpu_id_python)
-    # print(mycpu.get_cpu_usage_rate(percpu=True))
-    # print(mycpu.get_cpu_temper())
-    # mymem.get_mem_info()
-    # print(mymem.mem_total)
-    # print(mymem.mem_available)
-    # print(mymem.get_all_mem_info())
-    # print(mymem.get_mem_usage_rate1())
-    # print(mymem.get_mem_usage_rate2())
-    # mydisk.get_all_disk_info()
-    # print(mydisk.total_capacity)
-    # print(mydisk.used_capacity)
-    # print(mydisk.free_capacity)
-    # print(mydisk.percent)
-    # print(mydisk.get_one_disk_info('/media/vision/work'))
-    # print(mysys.get_ip())
-    # mysys.get_network_info()
-    # print(mysys.routingGateway)
-    # print(mysys.routingNicName)
-    # print(mysys.routingNicMacAddr)
-    # print(mysys.routingIPAddr)
-    # print(mysys.routingNetmask)
-    # mysys.get_boot_time()
-    # print(mysys.boot_time)
-    # print(mysys.get_run_time())
-    # print(mysys.get_all_users())
-    # print(mysys.get_all_processes_info())
-    # print(mysys.get_all_PID())
-    # print(mysys.get_one_process_info(1))
-    # mysys.get_system_sn()
-    # mysys.get_baseboard_sn()
-    # print(mysys.system_sn)
-    # print(mysys.baseboard_sn)
+    mygpu = MyGPU()
